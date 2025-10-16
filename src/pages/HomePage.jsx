@@ -31,13 +31,17 @@ export default function HomePage() {
       const response = await subscriptionPlansAPI.getAllGrouped();
       // Pega os planos agrupados
       const groupedPlans = response.data || {};
-      
+
       // Converte para array de grupos com suas variações
-      const planGroups = Object.entries(groupedPlans).map(([baseName, variations]) => ({
-        baseName,
-        variations: variations.sort((a, b) => a.billing_cycle_days - b.billing_cycle_days),
-      }));
-      
+      const planGroups = Object.entries(groupedPlans).map(
+        ([baseName, variations]) => ({
+          baseName,
+          variations: variations.sort(
+            (a, b) => a.billing_cycle_days - b.billing_cycle_days
+          ),
+        })
+      );
+
       setPlans(planGroups);
     } catch (error) {
       console.error("Erro ao carregar planos:", error);
@@ -95,7 +99,7 @@ export default function HomePage() {
 
   const getPlanFeatures = (plan) => {
     const features = [];
-    
+
     if (plan.max_users) features.push(`Até ${plan.max_users} usuários`);
     if (plan.max_transactions_per_month) {
       features.push(`${plan.max_transactions_per_month} transações/mês`);
@@ -108,7 +112,7 @@ export default function HomePage() {
     }
     if (plan.max_budgets) features.push(`${plan.max_budgets} orçamentos`);
     if (plan.max_planners) features.push(`${plan.max_planners} planejadores`);
-    
+
     return features.length > 0 ? features : ["Recursos inclusos"];
   };
 
@@ -283,26 +287,39 @@ export default function HomePage() {
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-8 max-w-5xl mx-auto">
                     {planGroup.variations.map((plan, index) => {
                       const isHighlighted = plan.billing_cycle_days === 365; // Destaca o plano anual
-                      const monthlyPrice = plan.billing_cycle_days === 365 
-                        ? (parseFloat(plan.price) / 12).toFixed(2).replace('.', ',')
-                        : null;
-                      
+                      const monthlyPrice =
+                        plan.billing_cycle_days === 365
+                          ? (parseFloat(plan.price) / 12)
+                              .toFixed(2)
+                              .replace(".", ",")
+                          : null;
+
                       // Calcula desconto para planos longos
                       const calculateDiscount = () => {
-                        if (plan.billing_cycle_days === 365 && planGroup.variations.length > 1) {
-                          const monthlyPlan = planGroup.variations.find(p => p.billing_cycle_days === 30);
+                        if (
+                          plan.billing_cycle_days === 365 &&
+                          planGroup.variations.length > 1
+                        ) {
+                          const monthlyPlan = planGroup.variations.find(
+                            (p) => p.billing_cycle_days === 30
+                          );
                           if (monthlyPlan) {
-                            const yearlyIfMonthly = parseFloat(monthlyPlan.price) * 12;
+                            const yearlyIfMonthly =
+                              parseFloat(monthlyPlan.price) * 12;
                             const yearlyPrice = parseFloat(plan.price);
-                            const discount = ((yearlyIfMonthly - yearlyPrice) / yearlyIfMonthly * 100).toFixed(0);
+                            const discount = (
+                              ((yearlyIfMonthly - yearlyPrice) /
+                                yearlyIfMonthly) *
+                              100
+                            ).toFixed(0);
                             return discount;
                           }
                         }
                         return null;
                       };
-                      
+
                       const discount = calculateDiscount();
-                      
+
                       return (
                         <div
                           key={plan.id}
@@ -318,7 +335,7 @@ export default function HomePage() {
                               -{discount}% OFF
                             </div>
                           )}
-                          
+
                           <div className="text-center mb-6">
                             {/* Badge do ciclo */}
                             <div
@@ -332,40 +349,54 @@ export default function HomePage() {
                               {getBillingLabel(plan.billing_cycle_days)}
                             </div>
 
-                            {/* Preço mensal para planos anuais */}
+                            {/* Preço mensal para planos anuais - MARKETING CHAMATIVO */}
                             {monthlyPrice && (
                               <div className="mb-3">
-                                <div className="flex items-baseline justify-center gap-1">
-                                  <span className="text-sm text-secondary-900 font-semibold">
-                                    Apenas
-                                  </span>
-                                  <span className="text-xs text-secondary-800">R$</span>
-                                  <span className="text-4xl font-black text-secondary-900">
-                                    {monthlyPrice.split(',')[0]}
-                                  </span>
-                                  <span className="text-2xl font-bold text-secondary-900">
-                                    ,{monthlyPrice.split(',')[1]}
-                                  </span>
-                                  <span className="text-sm text-secondary-800 font-semibold">
-                                    /mês
-                                  </span>
+                                <div className="flex flex-col items-center gap-1">
+                                  <div className="flex items-baseline justify-center gap-1">
+                                    <span className="text-lg text-secondary-900 font-bold">
+                                      Apenas
+                                    </span>
+                                    <span className="text-lg text-secondary-800 font-bold">
+                                      R$
+                                    </span>
+                                    <span className="text-6xl font-black text-secondary-900 leading-none">
+                                      {monthlyPrice.split(",")[0]}
+                                    </span>
+                                    <span className="text-4xl font-black text-secondary-900">
+                                      ,{monthlyPrice.split(",")[1]}
+                                    </span>
+                                  </div>
+                                  <div className="flex items-baseline gap-1">
+                                    <span className="text-xl text-secondary-900 font-bold">
+                                      por mês
+                                    </span>
+                                    <span className="text-[10px] text-secondary-800/70 font-normal">
+                                      (no plano anual)
+                                    </span>
+                                  </div>
                                 </div>
-                                <p className="text-xs text-secondary-800 mt-1 font-medium">
-                                  no plano anual 🎉
-                                </p>
                               </div>
                             )}
 
-                            {/* Preço total */}
-                            <div className={`${monthlyPrice ? 'mt-4' : ''}`}>
+                            {/* Preço total - discreto para planos anuais */}
+                            <div
+                              className={`${
+                                monthlyPrice
+                                  ? "mt-4 pt-3 border-t border-secondary-900/20"
+                                  : ""
+                              }`}
+                            >
                               {monthlyPrice && (
-                                <p className="text-xs text-secondary-800 mb-1 font-medium">
-                                  Total:
+                                <p className="text-[10px] text-secondary-800/70 mb-1 font-normal uppercase tracking-wide">
+                                  Pagamento anual de:
                                 </p>
                               )}
                               <div className="flex items-baseline justify-center gap-1">
                                 <span
-                                  className={`text-sm ${
+                                  className={`${
+                                    monthlyPrice ? "text-xs" : "text-sm"
+                                  } ${
                                     isHighlighted
                                       ? "text-secondary-800"
                                       : "text-gray-400"
@@ -374,7 +405,9 @@ export default function HomePage() {
                                   R$
                                 </span>
                                 <span
-                                  className={`${monthlyPrice ? 'text-3xl' : 'text-5xl'} font-bold ${
+                                  className={`${
+                                    monthlyPrice ? "text-2xl" : "text-5xl"
+                                  } font-bold ${
                                     isHighlighted
                                       ? "text-secondary-900"
                                       : "text-white"
@@ -383,27 +416,33 @@ export default function HomePage() {
                                   {plan.price}
                                 </span>
                               </div>
-                              <p
-                                className={`text-xs mt-1 ${
-                                  isHighlighted
-                                    ? "text-secondary-800"
-                                    : "text-gray-400"
-                                }`}
-                              >
-                                {monthlyPrice ? 'cobrado anualmente' : `a cada ${plan.billing_cycle_days} dias`}
-                              </p>
+                              {!monthlyPrice && (
+                                <p
+                                  className={`text-xs mt-1 ${
+                                    isHighlighted
+                                      ? "text-secondary-800"
+                                      : "text-gray-400"
+                                  }`}
+                                >
+                                  a cada {plan.billing_cycle_days} dias
+                                </p>
+                              )}
                             </div>
 
                             {/* Badges de benefícios */}
                             {plan.billing_cycle_days === 365 && (
                               <div className="mt-4 space-y-2">
-                                <div className="inline-flex items-center gap-1 px-3 py-1 bg-green-500/20 text-green-900 rounded-full text-xs font-bold">
-                                  <CheckCircle size={14} />
-                                  Melhor Economia
+                                <div className="w-full">
+                                  <div className="inline-flex items-center gap-1 px-4 py-2 bg-gradient-to-r from-green-500 to-green-600 text-white rounded-lg text-sm font-bold shadow-lg">
+                                    <CheckCircle size={16} />
+                                    Economia de {discount}%
+                                  </div>
                                 </div>
-                                <div className="inline-flex items-center gap-1 px-3 py-1 bg-blue-500/20 text-blue-900 rounded-full text-xs font-bold mx-1">
-                                  <Zap size={14} />
-                                  Mais Popular
+                                <div className="w-full">
+                                  <div className="inline-flex items-center gap-1 px-4 py-2 bg-gradient-to-r from-blue-500 to-blue-600 text-white rounded-lg text-sm font-bold shadow-lg">
+                                    <Zap size={16} />
+                                    Escolha Mais Popular
+                                  </div>
                                 </div>
                               </div>
                             )}
@@ -627,4 +666,3 @@ export default function HomePage() {
     </div>
   );
 }
-
