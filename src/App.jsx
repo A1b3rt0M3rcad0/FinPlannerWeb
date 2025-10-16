@@ -18,6 +18,7 @@ import EditSubscriptionPlanPage from "./pages/subscription-plans/EditSubscriptio
 
 // Subscriptions Pages
 import SubscriptionsListPage from "./pages/subscriptions/SubscriptionsListPage";
+import SubscriptionViewPage from "./pages/subscriptions/SubscriptionViewPage";
 
 // Users Pages
 import UsersListPage from "./pages/users/UsersListPage";
@@ -90,7 +91,7 @@ function App() {
           />
           <Route
             path={ROUTES.SUBSCRIPTIONS.VIEW}
-            element={<ComingSoon title="Detalhes da Assinatura" />}
+            element={<SubscriptionViewPage />}
           />
 
           {/* Users */}
