@@ -22,6 +22,7 @@ import SubscriptionsListPage from "./pages/subscriptions/SubscriptionsListPage";
 // Users Pages
 import UsersListPage from "./pages/users/UsersListPage";
 import UserViewPage from "./pages/users/UserViewPage";
+import UserEditPage from "./pages/users/UserEditPage";
 
 // Payments Pages
 import PaymentsListPage from "./pages/payments/PaymentsListPage";
@@ -98,10 +99,7 @@ function App() {
             path={ROUTES.USERS.CREATE}
             element={<ComingSoon title="Criar Usuário" />}
           />
-          <Route
-            path={ROUTES.USERS.EDIT}
-            element={<ComingSoon title="Editar Usuário" />}
-          />
+          <Route path={ROUTES.USERS.EDIT} element={<UserEditPage />} />
           <Route path={ROUTES.USERS.VIEW} element={<UserViewPage />} />
 
           {/* Payments */}

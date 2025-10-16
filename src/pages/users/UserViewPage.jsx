@@ -58,15 +58,6 @@ export default function UserViewPage() {
             return new Date(sub.expires_at) > new Date();
           });
 
-          console.log("🔍 DEBUG - Assinatura ativa:", active);
-          if (active?.plan) {
-            console.log("📋 Plano:", {
-              name: active.plan.name,
-              base_plan_name: active.plan.base_plan_name,
-              role_a_usar: active.plan.base_plan_name || active.plan.name,
-            });
-          }
-
           setActiveSubscription(active || null);
         } catch (error) {
           console.error("Erro ao carregar assinaturas:", error);
