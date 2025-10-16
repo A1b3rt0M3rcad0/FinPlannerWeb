@@ -13,6 +13,12 @@ const authAPI = {
     return response.data;
   },
 
+  // Register
+  register: async (userData) => {
+    const response = await api.post("/users", userData);
+    return response.data;
+  },
+
   // Refresh Token
   refreshToken: async (refreshToken) => {
     const response = await api.post("/auth/refresh", {

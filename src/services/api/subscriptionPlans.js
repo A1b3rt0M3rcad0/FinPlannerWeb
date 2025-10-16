@@ -7,6 +7,12 @@ const subscriptionPlansAPI = {
     return response.data;
   },
 
+  // Listar planos agrupados por base_plan_name
+  getAllGrouped: async () => {
+    const response = await api.get("/subscription-plans/grouped");
+    return response.data;
+  },
+
   // Buscar plano por ID
   getById: async (id) => {
     const response = await api.get(`/subscription-plans/${id}`);

@@ -5,8 +5,13 @@ import AuthGuard from "./components/auth/AuthGuard";
 import ErrorBoundary from "./components/ui/ErrorBoundary";
 import AdminLayout from "./components/layout/AdminLayout";
 
+// Public Pages
+import HomePage from "./pages/HomePage";
+
 // Auth Pages
 import Login from "./pages/auth/Login";
+import AdminLogin from "./pages/auth/AdminLogin";
+import Register from "./pages/auth/Register";
 
 // Dashboard Pages
 import DashboardPage from "./pages/dashboard/DashboardPage";
@@ -43,7 +48,9 @@ function App() {
   return (
     <AuthProvider>
       <Routes>
-        {/* Login - Public Route */}
+        {/* Public Routes */}
+        <Route path={ROUTES.HOME} element={<HomePage />} />
+        
         <Route
           path={ROUTES.LOGIN}
           element={
@@ -52,6 +59,24 @@ function App() {
             </AuthGuard>
           }
         />
+        
+          <Route
+            path={ROUTES.REGISTER}
+            element={
+              <AuthGuard requireAuth={false}>
+                <Register />
+              </AuthGuard>
+            }
+          />
+
+          <Route
+            path={ROUTES.ADMIN_LOGIN}
+            element={
+              <AuthGuard requireAuth={false}>
+                <AdminLogin />
+              </AuthGuard>
+            }
+          />
 
         {/* Protected Routes - Todas usam o AdminLayout */}
         <Route

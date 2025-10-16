@@ -1,12 +1,12 @@
 import { useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
-import { Wallet, Mail, Lock, AlertCircle } from "lucide-react";
+import { Shield, Mail, Lock, AlertCircle } from "lucide-react";
 import { useAuth } from "../../hooks/useAuth";
 import authAPI from "../../services/api/auth";
 import Swal from "sweetalert2";
 import { ROUTES } from "../../config/constants";
 
-export default function Login() {
+export default function AdminLogin() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
@@ -20,34 +20,37 @@ export default function Login() {
     setLoading(true);
 
     try {
-      const response = await authAPI.login(email, password);
+      const response = await authAPI.loginAdmin(email, password);
 
       if (response.data?.access_token) {
-        // Extrai informações do usuário da resposta
-        const userInfo = {
-          id: response.data.user.id,
-          email: response.data.user.email,
-          first_name: response.data.user.first_name || email.split("@")[0],
-          last_name: response.data.user.last_name || "",
-          user_type: response.data.user.user_type || "user",
+        // Extrai informações do admin da resposta
+        const adminInfo = {
+          id: response.data.admin.id,
+          user_id: response.data.admin.user_id,
+          email: response.data.admin.email,
+          first_name: response.data.admin.first_name || email.split("@")[0],
+          last_name: response.data.admin.last_name || "",
+          role: response.data.admin.role || "admin",
+          user_type: response.data.admin.user_type || "admin", // Adiciona user_type
+          is_super_admin: response.data.admin.is_super_admin || false,
         };
 
-        // Salva tokens e informações do usuário
+        // Salva tokens e informações do admin
         login(
           response.data.access_token,
           response.data.refresh_token,
-          userInfo
+          adminInfo
         );
 
         Swal.fire({
           icon: "success",
-          title: "Bem-vindo!",
-          text: `Olá, ${userInfo.first_name}!`,
+          title: "Login Administrativo",
+          text: `Bem-vindo, ${adminInfo.first_name}!`,
           timer: 2000,
           showConfirmButton: false,
         });
 
-        navigate(ROUTES.USER_DASHBOARD);
+        navigate(ROUTES.DASHBOARD);
       }
     } catch (err) {
       console.error("Erro no login:", err);
@@ -68,19 +71,17 @@ export default function Login() {
       <div className="max-w-md w-full relative z-10">
         {/* Logo e título */}
         <div className="text-center mb-8">
-          <Link to={ROUTES.HOME}>
-            <div className="inline-flex items-center justify-center w-20 h-20 bg-gradient-to-br from-primary-500 to-primary-600 rounded-2xl shadow-2xl shadow-primary-500/50 mb-4 hover:scale-105 transition-transform">
-              <Wallet className="w-12 h-12 text-secondary-900" />
-            </div>
-          </Link>
+          <div className="inline-flex items-center justify-center w-20 h-20 bg-gradient-to-br from-primary-500 to-primary-600 rounded-2xl shadow-2xl shadow-primary-500/50 mb-4">
+            <Shield className="w-12 h-12 text-secondary-900" />
+          </div>
           <h1 className="text-4xl font-bold text-white mb-2">FinPlanner</h1>
-          <p className="text-primary-300">Controle Financeiro Pessoal</p>
+          <p className="text-primary-300">Painel Administrativo</p>
         </div>
 
         {/* Card de login */}
         <div className="bg-white rounded-2xl shadow-2xl p-8">
           <h2 className="text-2xl font-bold text-gray-800 mb-6">
-            Acesse sua conta
+            Acesso Restrito
           </h2>
 
           {error && (
@@ -94,7 +95,7 @@ export default function Login() {
             {/* Email */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
-                Email
+                Email Administrativo
               </label>
               <div className="relative">
                 <Mail
@@ -106,7 +107,7 @@ export default function Login() {
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none transition-all"
-                  placeholder="seu@email.com"
+                  placeholder="admin@finplanner.com"
                   required
                 />
               </div>
@@ -133,26 +134,13 @@ export default function Login() {
               </div>
             </div>
 
-            {/* Link para Cadastro */}
-            <div className="text-center text-sm">
-              <p className="text-gray-600">
-                Não tem uma conta?{" "}
-                <Link
-                  to={ROUTES.REGISTER}
-                  className="text-primary-600 hover:text-primary-700 font-semibold transition-colors"
-                >
-                  Criar conta grátis
-                </Link>
-              </p>
-            </div>
-
             {/* Botão de login */}
             <button
               type="submit"
               disabled={loading}
               className="w-full py-3 bg-gradient-to-r from-primary-500 to-primary-600 text-secondary-900 font-bold rounded-lg hover:from-primary-600 hover:to-primary-700 transition-all shadow-lg hover:shadow-xl hover:shadow-primary-500/50 disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              {loading ? "Entrando..." : "Entrar"}
+              {loading ? "Entrando..." : "Acessar Painel"}
             </button>
           </form>
         </div>

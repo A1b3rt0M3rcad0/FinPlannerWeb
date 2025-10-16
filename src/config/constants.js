@@ -6,8 +6,12 @@ export const API_CONFIG = {
 
 // Rotas da aplicação
 export const ROUTES = {
-  LOGIN: "/",
-  DASHBOARD: "/dashboard",
+  HOME: "/",
+  LOGIN: "/login", // Login de usuários comuns
+  ADMIN_LOGIN: "/admin/login", // Login administrativo (escondido)
+  REGISTER: "/cadastro",
+  DASHBOARD: "/dashboard", // Dashboard administrativo
+  USER_DASHBOARD: "/app", // Dashboard de usuários comuns
 
   // Subscription Plans (Admin)
   SUBSCRIPTION_PLANS: {

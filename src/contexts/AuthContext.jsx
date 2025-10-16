@@ -114,13 +114,34 @@ export function AuthProvider({ children }) {
   // Faz logout do usuário
   const logout = useCallback(() => {
     console.log("🚪 Fazendo logout...");
+
+    // Verifica se é admin para redirecionar ao login correto
+    const storedUser = localStorage.getItem(AUTH_CONFIG.USER_INFO_KEY);
+    let isAdmin = false;
+
+    if (storedUser) {
+      try {
+        const userParsed = JSON.parse(storedUser);
+        // Verifica se tem role admin ou is_super_admin
+        isAdmin =
+          userParsed.role === "admin" ||
+          userParsed.is_super_admin ||
+          userParsed.user_type === "admin";
+      } catch (error) {
+        console.error("Erro ao parsear usuário no logout:", error);
+      }
+    }
+
     localStorage.removeItem(AUTH_CONFIG.TOKEN_KEY);
     localStorage.removeItem(AUTH_CONFIG.REFRESH_TOKEN_KEY);
     localStorage.removeItem(AUTH_CONFIG.USER_INFO_KEY);
     setIsAuthenticated(false);
     setUser(null);
-    navigate("/", { replace: true });
-    console.log("✅ Logout realizado");
+
+    // Redireciona para login admin se for admin, senão para home
+    const redirectPath = isAdmin ? "/admin/login" : "/";
+    navigate(redirectPath, { replace: true });
+    console.log(`✅ Logout realizado - redirecionando para ${redirectPath}`);
   }, [navigate]);
 
   // Atualiza o token (para refresh)

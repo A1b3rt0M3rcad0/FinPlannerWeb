@@ -23,7 +23,7 @@ export default function AuthGuard({ children, requireAuth = true }) {
   // Se requer autenticação e não está autenticado, redireciona para login
   if (requireAuth && !isAuthenticated) {
     console.log("❌ Não autenticado - redirecionando para login");
-    return <Navigate to="/" replace state={{ from: location }} />;
+    return <Navigate to="/login" replace state={{ from: location }} />;
   }
 
   // Se não requer autenticação (página de login) e está autenticado, redireciona para dashboard
