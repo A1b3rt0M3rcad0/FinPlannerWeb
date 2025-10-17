@@ -17,8 +17,12 @@ import {
   FileText,
 } from "lucide-react";
 import Swal from "sweetalert2";
+import creditCardsAPI from "../../services/api/creditCards";
+import transactionsAPI from "../../services/api/transactions";
+import { usePlanner } from "../../contexts/PlannerContext";
 
 export default function CardsPage() {
+  const { selectedPlanner } = usePlanner();
   const [loading, setLoading] = useState(false);
   const [cards, setCards] = useState([]);
   const [showModal, setShowModal] = useState(false);
@@ -42,74 +46,86 @@ export default function CardsPage() {
   }, []);
 
   const loadCards = async () => {
+    if (!selectedPlanner) {
+      console.warn("Nenhum planner selecionado");
+      return;
+    }
+
     setLoading(true);
     try {
-      // TODO: Integrar com API
-      setTimeout(() => {
-        const mockData = [
-          {
-            id: 1,
-            name: "Cartão Principal",
-            last_digits: "1234",
-            brand: "visa",
-            limit: 5000.0,
-            used: 1200.0,
-            closing_day: 15,
-            due_day: 25,
-            color: "#8B5CF6",
-            current_invoice: {
-              amount: 1200.0,
-              due_date: "2025-11-25",
-              status: "open",
-            },
-            invoices: [
+      const response = await creditCardsAPI.getAll(selectedPlanner.id);
+      const cardsData = response.data || [];
+
+      // Enriquecer cartões com cálculo de uso baseado em transações
+      const enrichedCards = await Promise.all(
+        cardsData.map(async (card) => {
+          let used = 0;
+          let invoices = [];
+
+          try {
+            // Buscar transações do cartão (se houver endpoint ou filtrar por credit_card_id)
+            const transactionsRes = await transactionsAPI.getAll(
+              selectedPlanner.id
+            );
+            const cardTransactions = (transactionsRes.data || []).filter(
+              (t) => t.credit_card_id === card.id
+            );
+
+            // Calcular uso atual (mês corrente)
+            const now = new Date();
+            const currentMonthTransactions = cardTransactions.filter((t) => {
+              const tDate = new Date(t.date);
+              return (
+                tDate.getMonth() === now.getMonth() &&
+                tDate.getFullYear() === now.getFullYear()
+              );
+            });
+
+            used = currentMonthTransactions.reduce(
+              (sum, t) => sum + (t.amount || 0),
+              0
+            );
+
+            // Criar fatura atual
+            invoices = [
               {
-                id: 1,
-                month: "Outubro 2025",
-                amount: 1200.0,
-                due_date: "2025-10-25",
+                id: `${card.id}-current`,
+                month: now.toLocaleDateString("pt-BR", {
+                  month: "long",
+                  year: "numeric",
+                }),
+                amount: used,
+                due_date: `${now.getFullYear()}-${String(
+                  now.getMonth() + 1
+                ).padStart(2, "0")}-${String(card.due_day || 10).padStart(
+                  2,
+                  "0"
+                )}`,
                 status: "open",
               },
-              {
-                id: 2,
-                month: "Setembro 2025",
-                amount: 980.5,
-                due_date: "2025-09-25",
-                status: "paid",
-              },
-            ],
-          },
-          {
-            id: 2,
-            name: "Cartão Reserva",
-            last_digits: "5678",
-            brand: "mastercard",
-            limit: 3000.0,
-            used: 450.0,
-            closing_day: 10,
-            due_day: 20,
-            color: "#10B981",
-            current_invoice: {
-              amount: 450.0,
-              due_date: "2025-11-20",
-              status: "open",
-            },
-            invoices: [
-              {
-                id: 3,
-                month: "Outubro 2025",
-                amount: 450.0,
-                due_date: "2025-10-20",
-                status: "open",
-              },
-            ],
-          },
-        ];
-        setCards(mockData);
-        setLoading(false);
-      }, 500);
+            ];
+          } catch (error) {
+            console.warn(`Erro ao calcular uso do cartão ${card.id}:`, error);
+          }
+
+          return {
+            ...card,
+            used,
+            current_invoice: invoices[0],
+            invoices,
+          };
+        })
+      );
+
+      setCards(enrichedCards);
     } catch (error) {
       console.error("Erro ao carregar cartões:", error);
+      Swal.fire({
+        icon: "error",
+        title: "Erro ao carregar cartões",
+        text: error.response?.data?.error || error.message,
+      });
+    } finally {
       setLoading(false);
     }
   };
@@ -190,46 +206,60 @@ export default function CardsPage() {
   const handleSubmit = async (e) => {
     e.preventDefault();
 
+    if (!selectedPlanner) {
+      Swal.fire({
+        icon: "error",
+        title: "Erro",
+        text: "Nenhum planner selecionado",
+      });
+      return;
+    }
+
     try {
       const cardData = {
-        ...formData,
+        name: formData.name,
+        last_digits: formData.last_digits,
+        brand: formData.brand,
         limit: parseFloat(formData.limit),
         closing_day: parseInt(formData.closing_day),
         due_day: parseInt(formData.due_day),
-        id: editingCard ? editingCard.id : Date.now(),
-        used: editingCard ? editingCard.used : 0,
-        current_invoice: editingCard
-          ? editingCard.current_invoice
-          : { amount: 0, status: "open" },
-        invoices: editingCard ? editingCard.invoices : [],
+        color: formData.color,
+        planner_id: selectedPlanner.id,
       };
 
       if (editingCard) {
-        setCards((prev) =>
-          prev.map((c) => (c.id === editingCard.id ? cardData : c))
-        );
+        const response = await creditCardsAPI.update(editingCard.id, cardData);
+
         Swal.fire({
           icon: "success",
           title: "Sucesso!",
           text: "Cartão atualizado",
           timer: 2000,
         });
+
+        // Recarregar cartões
+        loadCards();
       } else {
-        setCards((prev) => [...prev, cardData]);
+        const response = await creditCardsAPI.create(cardData);
+
         Swal.fire({
           icon: "success",
           title: "Sucesso!",
           text: "Cartão adicionado",
           timer: 2000,
         });
+
+        // Recarregar cartões
+        loadCards();
       }
 
       handleCloseModal();
     } catch (error) {
+      console.error("Erro ao salvar cartão:", error);
       Swal.fire({
         icon: "error",
         title: "Erro",
-        text: error.message,
+        text: error.response?.data?.error || error.message,
       });
     }
   };
@@ -248,7 +278,10 @@ export default function CardsPage() {
 
     if (result.isConfirmed) {
       try {
+        await creditCardsAPI.delete(id);
+
         setCards((prev) => prev.filter((c) => c.id !== id));
+
         Swal.fire({
           icon: "success",
           title: "Excluído!",
@@ -256,10 +289,11 @@ export default function CardsPage() {
           timer: 2000,
         });
       } catch (error) {
+        console.error("Erro ao excluir cartão:", error);
         Swal.fire({
           icon: "error",
           title: "Erro",
-          text: error.message,
+          text: error.response?.data?.error || error.message,
         });
       }
     }

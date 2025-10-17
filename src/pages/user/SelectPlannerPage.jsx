@@ -13,6 +13,7 @@ import { useAuth } from "../../hooks/useAuth";
 import { usePlanner } from "../../contexts/PlannerContext";
 import { ROUTES } from "../../config/constants";
 import Swal from "sweetalert2";
+import plannersAPI from "../../services/api/planners";
 
 export default function SelectPlannerPage() {
   const [loading, setLoading] = useState(true);
@@ -34,33 +35,25 @@ export default function SelectPlannerPage() {
   const loadPlanners = async () => {
     setLoading(true);
     try {
-      // TODO: Integrar com API GET /planners (do usuário logado)
-      setTimeout(() => {
-        const mockPlanners = [
-          {
-            id: 1,
-            name: "Finanças Pessoais",
-            description: "Minhas finanças pessoais",
-            owner_id: user?.id,
-            is_owner: true,
-            members_count: 1,
-            created_at: "2025-01-15",
-          },
-          {
-            id: 2,
-            name: "Família",
-            description: "Orçamento familiar compartilhado",
-            owner_id: user?.id,
-            is_owner: true,
-            members_count: 3,
-            created_at: "2025-02-20",
-          },
-        ];
-        setPlanners(mockPlanners);
-        setLoading(false);
-      }, 1000);
+      const response = await plannersAPI.getAll();
+      const plannersData = response.data || [];
+
+      // Enriquecer dados dos planners
+      const enrichedPlanners = plannersData.map((planner) => ({
+        ...planner,
+        is_owner: planner.owner_id === user?.id,
+        members_count: 1, // Pode ser calculado chamando getMembers se necessário
+      }));
+
+      setPlanners(enrichedPlanners);
     } catch (error) {
       console.error("Erro ao carregar planners:", error);
+      Swal.fire({
+        icon: "error",
+        title: "Erro ao carregar planners",
+        text: error.response?.data?.error || error.message,
+      });
+    } finally {
       setLoading(false);
     }
   };
@@ -80,20 +73,31 @@ export default function SelectPlannerPage() {
   const handleCreatePlanner = async (e) => {
     e.preventDefault();
 
-    try {
-      // TODO: Integrar com API POST /planners
-      const newPlanner = {
-        id: Date.now(),
-        name: formData.name,
-        description: formData.description,
-        owner_id: user?.id,
-        is_owner: true,
-        members_count: 1,
-        created_at: new Date().toISOString(),
-      };
+    // Validação extra
+    if (!formData.name || formData.name.trim() === "") {
+      Swal.fire({
+        icon: "warning",
+        title: "Atenção",
+        text: "Por favor, informe o nome do planner",
+      });
+      return;
+    }
 
-      setPlanners((prev) => [...prev, newPlanner]);
-      
+    try {
+      console.log("📋 Criando planner com dados:", formData);
+      const response = await plannersAPI.create(formData);
+      console.log("✅ Planner criado:", response.data);
+      const newPlanner = response.data;
+
+      setPlanners((prev) => [
+        ...prev,
+        {
+          ...newPlanner,
+          is_owner: true,
+          members_count: 1,
+        },
+      ]);
+
       Swal.fire({
         icon: "success",
         title: "Planner Criado!",
@@ -108,6 +112,8 @@ export default function SelectPlannerPage() {
       // Auto-seleciona o planner recém criado
       handleSelectPlanner(newPlanner);
     } catch (error) {
+      console.error("❌ Erro ao criar planner:", error);
+      console.error("Detalhes do erro:", error.response?.data);
       Swal.fire({
         icon: "error",
         title: "Erro",
@@ -150,7 +156,8 @@ export default function SelectPlannerPage() {
         <div className="bg-white/10 backdrop-blur-lg rounded-xl p-4 mb-6 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="w-12 h-12 bg-white/20 rounded-full flex items-center justify-center text-white font-bold text-lg">
-              {user?.first_name?.[0]}{user?.last_name?.[0]}
+              {user?.first_name?.[0]}
+              {user?.last_name?.[0]}
             </div>
             <div>
               <p className="text-white font-medium">
@@ -223,7 +230,10 @@ export default function SelectPlannerPage() {
                   <div className="flex items-center gap-4 text-sm text-gray-600">
                     <div className="flex items-center gap-1">
                       <Users size={16} />
-                      <span>{planner.members_count} membro{planner.members_count > 1 ? "s" : ""}</span>
+                      <span>
+                        {planner.members_count} membro
+                        {planner.members_count > 1 ? "s" : ""}
+                      </span>
                     </div>
                     {planner.is_owner && (
                       <span className="px-2 py-1 bg-blue-100 text-blue-600 rounded text-xs font-medium">
@@ -241,7 +251,10 @@ export default function SelectPlannerPage() {
               className="w-full bg-white/10 backdrop-blur-lg border-2 border-white/30 border-dashed rounded-2xl p-6 text-white hover:bg-white/20 transition-all group"
             >
               <div className="flex items-center justify-center gap-3">
-                <Plus size={24} className="group-hover:scale-110 transition-transform" />
+                <Plus
+                  size={24}
+                  className="group-hover:scale-110 transition-transform"
+                />
                 <span className="text-lg font-medium">Criar Novo Planner</span>
               </div>
             </button>
@@ -329,4 +342,3 @@ export default function SelectPlannerPage() {
     </div>
   );
 }
-

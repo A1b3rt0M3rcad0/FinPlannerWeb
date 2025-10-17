@@ -17,8 +17,11 @@ import {
   ArrowDownLeft,
 } from "lucide-react";
 import Swal from "sweetalert2";
+import accountsAPI from "../../services/api/accounts";
+import { usePlanner } from "../../contexts/PlannerContext";
 
 export default function AccountsPage() {
+  const { selectedPlanner } = usePlanner();
   const [loading, setLoading] = useState(false);
   const [accounts, setAccounts] = useState([]);
   const [showModal, setShowModal] = useState(false);
@@ -38,54 +41,38 @@ export default function AccountsPage() {
   }, []);
 
   const loadAccounts = async () => {
+    if (!selectedPlanner) {
+      console.warn("Nenhum planner selecionado");
+      return;
+    }
+
     setLoading(true);
     try {
-      // TODO: Integrar com API
-      setTimeout(() => {
-        const mockData = [
-          {
-            id: 1,
-            name: "Conta Corrente",
-            type: "checking",
-            bank: "Nubank",
-            balance: 5420.50,
-            color: "#8B5CF6",
-            icon: Building2,
-            lastTransactions: [
-              { type: "income", amount: 1500, date: "2025-10-15" },
-              { type: "expense", amount: 234.50, date: "2025-10-14" },
-            ],
-          },
-          {
-            id: 2,
-            name: "Conta Poupança",
-            type: "savings",
-            bank: "Banco do Brasil",
-            balance: 15000.00,
-            color: "#10B981",
-            icon: Wallet,
-            lastTransactions: [
-              { type: "income", amount: 500, date: "2025-10-10" },
-            ],
-          },
-          {
-            id: 3,
-            name: "Investimentos",
-            type: "investment",
-            bank: "XP Investimentos",
-            balance: 25000.00,
-            color: "#F59E0B",
-            icon: TrendingUp,
-            lastTransactions: [
-              { type: "income", amount: 350, date: "2025-10-05" },
-            ],
-          },
-        ];
-        setAccounts(mockData);
-        setLoading(false);
-      }, 500);
+      const response = await accountsAPI.getAll(selectedPlanner.id);
+      const accountsData = response.data || [];
+
+      // Enriquecer dados com ícone baseado no tipo
+      const enrichedAccounts = accountsData.map((account) => ({
+        ...account,
+        type: account.account_type || account.type,
+        balance: parseFloat(account.current_balance || account.balance || 0),
+        bank: account.bank || account.name, // Usa o nome como banco se não tiver banco específico
+        color:
+          account.color ||
+          getAccountTypeColor(account.account_type || account.type), // Cor padrão baseada no tipo
+        icon: getAccountTypeIcon(account.account_type || account.type),
+        lastTransactions: account.last_transactions || [],
+      }));
+
+      setAccounts(enrichedAccounts);
     } catch (error) {
       console.error("Erro ao carregar contas:", error);
+      Swal.fire({
+        icon: "error",
+        title: "Erro ao carregar contas",
+        text: error.response?.data?.error || error.message,
+      });
+    } finally {
       setLoading(false);
     }
   };
@@ -120,6 +107,15 @@ export default function AccountsPage() {
     return icons[type] || Building2;
   };
 
+  const getAccountTypeColor = (type) => {
+    const colors = {
+      checking: "#3B82F6", // Azul
+      savings: "#10B981", // Verde
+      investment: "#8B5CF6", // Roxo
+    };
+    return colors[type] || "#6B7280"; // Cinza padrão
+  };
+
   const handleOpenModal = (account = null) => {
     if (account) {
       setEditingAccount(account);
@@ -151,19 +147,66 @@ export default function AccountsPage() {
   const handleSubmit = async (e) => {
     e.preventDefault();
 
+    if (!selectedPlanner) {
+      Swal.fire({
+        icon: "error",
+        title: "Erro",
+        text: "Nenhum planner selecionado",
+      });
+      return;
+    }
+
     try {
+      console.log("📝 FormData antes de enviar:", formData);
+
       const accountData = {
-        ...formData,
-        balance: parseFloat(formData.balance),
-        id: editingAccount ? editingAccount.id : Date.now(),
-        icon: getAccountTypeIcon(formData.type),
-        lastTransactions: editingAccount ? editingAccount.lastTransactions : [],
+        name: formData.name,
+        account_type: formData.type, // Backend espera "account_type" não "type"
+        initial_balance: parseFloat(formData.balance) || 0, // Backend espera "initial_balance"
+        bank: formData.bank || formData.name, // Envia o banco/instituição
+        color: formData.color, // Envia a cor selecionada
+        currency: "BRL",
+        planner_id: selectedPlanner.id,
       };
 
+      console.log("📤 Dados para API:", accountData);
+
       if (editingAccount) {
-        setAccounts((prev) =>
-          prev.map((a) => (a.id === editingAccount.id ? accountData : a))
+        const response = await accountsAPI.update(
+          editingAccount.id,
+          accountData
         );
+        const updatedAccount = response.data;
+
+        console.log("✅ Conta atualizada (resposta):", updatedAccount);
+
+        setAccounts((prev) =>
+          prev.map((a) =>
+            a.id === editingAccount.id
+              ? {
+                  ...updatedAccount,
+                  name: updatedAccount.name || a.name, // Garante que o nome seja atualizado
+                  bank: updatedAccount.bank || updatedAccount.name || a.bank, // Atualiza o banco também
+                  type: updatedAccount.account_type || updatedAccount.type,
+                  balance: parseFloat(
+                    updatedAccount.current_balance ||
+                      updatedAccount.balance ||
+                      0
+                  ),
+                  color:
+                    updatedAccount.color ||
+                    getAccountTypeColor(
+                      updatedAccount.account_type || updatedAccount.type
+                    ),
+                  icon: getAccountTypeIcon(
+                    updatedAccount.account_type || updatedAccount.type
+                  ),
+                  lastTransactions: a.lastTransactions,
+                }
+              : a
+          )
+        );
+
         Swal.fire({
           icon: "success",
           title: "Sucesso!",
@@ -171,7 +214,31 @@ export default function AccountsPage() {
           timer: 2000,
         });
       } else {
-        setAccounts((prev) => [...prev, accountData]);
+        const response = await accountsAPI.create(accountData);
+        const newAccount = response.data;
+
+        console.log("✅ Conta criada (resposta):", newAccount);
+
+        setAccounts((prev) => [
+          ...prev,
+          {
+            ...newAccount,
+            name: newAccount.name || accountData.name, // Garante que tem nome
+            bank: newAccount.bank || newAccount.name || accountData.name, // Usa o nome como banco
+            type: newAccount.account_type || newAccount.type,
+            balance: parseFloat(
+              newAccount.current_balance || newAccount.balance || 0
+            ),
+            color:
+              newAccount.color ||
+              getAccountTypeColor(newAccount.account_type || newAccount.type),
+            icon: getAccountTypeIcon(
+              newAccount.account_type || newAccount.type
+            ),
+            lastTransactions: [],
+          },
+        ]);
+
         Swal.fire({
           icon: "success",
           title: "Sucesso!",
@@ -182,10 +249,11 @@ export default function AccountsPage() {
 
       handleCloseModal();
     } catch (error) {
+      console.error("Erro ao salvar conta:", error);
       Swal.fire({
         icon: "error",
         title: "Erro",
-        text: error.message,
+        text: error.response?.data?.error || error.message,
       });
     }
   };
@@ -204,7 +272,10 @@ export default function AccountsPage() {
 
     if (result.isConfirmed) {
       try {
+        await accountsAPI.delete(id);
+
         setAccounts((prev) => prev.filter((a) => a.id !== id));
+
         Swal.fire({
           icon: "success",
           title: "Excluído!",
@@ -212,10 +283,11 @@ export default function AccountsPage() {
           timer: 2000,
         });
       } catch (error) {
+        console.error("Erro ao excluir conta:", error);
         Swal.fire({
           icon: "error",
           title: "Erro",
-          text: error.message,
+          text: error.response?.data?.error || error.message,
         });
       }
     }
@@ -241,9 +313,7 @@ export default function AccountsPage() {
             <h1 className="text-2xl lg:text-3xl font-bold text-gray-800">
               Contas Bancárias
             </h1>
-            <p className="text-gray-600 mt-1">
-              Gerencie suas contas e saldos
-            </p>
+            <p className="text-gray-600 mt-1">Gerencie suas contas e saldos</p>
           </div>
 
           <div className="flex items-center gap-3">
@@ -308,7 +378,8 @@ export default function AccountsPage() {
               Nenhuma conta cadastrada
             </h3>
             <p className="text-gray-600 mb-6">
-              Adicione suas contas bancárias para começar a gerenciar suas finanças
+              Adicione suas contas bancárias para começar a gerenciar suas
+              finanças
             </p>
             <button
               onClick={() => handleOpenModal()}
@@ -359,7 +430,9 @@ export default function AccountsPage() {
                         {getAccountTypeLabel(account.type)}
                       </p>
                       <h3 className="text-xl font-bold mb-1">{account.name}</h3>
-                      <p className="text-sm opacity-75">{account.bank}</p>
+                      {account.bank && account.bank !== account.name && (
+                        <p className="text-sm opacity-75">{account.bank}</p>
+                      )}
                     </div>
                   </div>
 
@@ -379,42 +452,47 @@ export default function AccountsPage() {
                           Últimas movimentações
                         </p>
                         <div className="space-y-2">
-                          {account.lastTransactions.slice(0, 2).map((tx, idx) => (
-                            <div
-                              key={idx}
-                              className="flex items-center justify-between text-sm"
-                            >
-                              <div className="flex items-center gap-2">
-                                {tx.type === "income" ? (
-                                  <ArrowUpRight
-                                    size={16}
-                                    className="text-green-600"
-                                  />
-                                ) : (
-                                  <ArrowDownLeft
-                                    size={16}
-                                    className="text-red-600"
-                                  />
-                                )}
-                                <span className="text-gray-600">
-                                  {new Date(tx.date).toLocaleDateString("pt-BR", {
-                                    day: "2-digit",
-                                    month: "short",
-                                  })}
+                          {account.lastTransactions
+                            .slice(0, 2)
+                            .map((tx, idx) => (
+                              <div
+                                key={idx}
+                                className="flex items-center justify-between text-sm"
+                              >
+                                <div className="flex items-center gap-2">
+                                  {tx.type === "income" ? (
+                                    <ArrowUpRight
+                                      size={16}
+                                      className="text-green-600"
+                                    />
+                                  ) : (
+                                    <ArrowDownLeft
+                                      size={16}
+                                      className="text-red-600"
+                                    />
+                                  )}
+                                  <span className="text-gray-600">
+                                    {new Date(tx.date).toLocaleDateString(
+                                      "pt-BR",
+                                      {
+                                        day: "2-digit",
+                                        month: "short",
+                                      }
+                                    )}
+                                  </span>
+                                </div>
+                                <span
+                                  className={`font-medium ${
+                                    tx.type === "income"
+                                      ? "text-green-600"
+                                      : "text-red-600"
+                                  }`}
+                                >
+                                  {tx.type === "income" ? "+" : "-"}
+                                  {formatCurrency(tx.amount)}
                                 </span>
                               </div>
-                              <span
-                                className={`font-medium ${
-                                  tx.type === "income"
-                                    ? "text-green-600"
-                                    : "text-red-600"
-                                }`}
-                              >
-                                {tx.type === "income" ? "+" : "-"}
-                                {formatCurrency(tx.amount)}
-                              </span>
-                            </div>
-                          ))}
+                            ))}
                         </div>
                       </div>
                     )}
@@ -505,7 +583,10 @@ export default function AccountsPage() {
                   step="0.01"
                   value={formData.balance}
                   onChange={(e) =>
-                    setFormData((prev) => ({ ...prev, balance: e.target.value }))
+                    setFormData((prev) => ({
+                      ...prev,
+                      balance: e.target.value,
+                    }))
                   }
                   placeholder="0.00"
                   className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
@@ -561,4 +642,3 @@ export default function AccountsPage() {
     </UserLayout>
   );
 }
-

@@ -11,8 +11,11 @@ import {
   Palette,
 } from "lucide-react";
 import Swal from "sweetalert2";
+import categoriesAPI from "../../services/api/categories";
+import { usePlanner } from "../../contexts/PlannerContext";
 
 export default function CategoriesPage() {
+  const { selectedPlanner } = usePlanner();
   const [loading, setLoading] = useState(false);
   const [categories, setCategories] = useState([]);
   const [showModal, setShowModal] = useState(false);
@@ -30,53 +33,24 @@ export default function CategoriesPage() {
   }, []);
 
   const loadCategories = async () => {
+    if (!selectedPlanner) {
+      console.warn("Nenhum planner selecionado");
+      return;
+    }
+
     setLoading(true);
     try {
-      // TODO: Integrar com API GET /categories (do planner atual)
-      setTimeout(() => {
-        const mockData = [
-          {
-            id: 1,
-            name: "Alimentação",
-            type: "expense",
-            color: "#10B981",
-            icon: "utensils",
-            transaction_count: 45,
-            is_default: true,
-          },
-          {
-            id: 2,
-            name: "Transporte",
-            type: "expense",
-            color: "#F59E0B",
-            icon: "car",
-            transaction_count: 28,
-            is_default: true,
-          },
-          {
-            id: 3,
-            name: "Salário",
-            type: "income",
-            color: "#3B82F6",
-            icon: "briefcase",
-            transaction_count: 12,
-            is_default: true,
-          },
-          {
-            id: 4,
-            name: "Farmácia",
-            type: "expense",
-            color: "#EF4444",
-            icon: "heart",
-            transaction_count: 8,
-            is_default: false,
-          },
-        ];
-        setCategories(mockData);
-        setLoading(false);
-      }, 500);
+      const response = await categoriesAPI.getAll(selectedPlanner.id);
+      const categoriesData = response.data || [];
+      setCategories(categoriesData);
     } catch (error) {
       console.error("Erro ao carregar categorias:", error);
+      Swal.fire({
+        icon: "error",
+        title: "Erro ao carregar categorias",
+        text: error.response?.data?.error || error.message,
+      });
+    } finally {
       setLoading(false);
     }
   };
@@ -110,19 +84,32 @@ export default function CategoriesPage() {
   const handleSubmit = async (e) => {
     e.preventDefault();
 
+    if (!selectedPlanner) {
+      Swal.fire({
+        icon: "error",
+        title: "Erro",
+        text: "Nenhum planner selecionado",
+      });
+      return;
+    }
+
     try {
       const categoryData = {
         ...formData,
-        id: editingCategory ? editingCategory.id : Date.now(),
-        transaction_count: editingCategory ? editingCategory.transaction_count : 0,
-        is_default: false,
+        planner_id: selectedPlanner.id,
       };
 
       if (editingCategory) {
-        // TODO: Integrar com API PUT /categories/:id
-        setCategories((prev) =>
-          prev.map((c) => (c.id === editingCategory.id ? categoryData : c))
+        const response = await categoriesAPI.update(
+          editingCategory.id,
+          categoryData
         );
+        const updatedCategory = response.data;
+
+        setCategories((prev) =>
+          prev.map((c) => (c.id === editingCategory.id ? updatedCategory : c))
+        );
+
         Swal.fire({
           icon: "success",
           title: "Sucesso!",
@@ -130,8 +117,11 @@ export default function CategoriesPage() {
           timer: 2000,
         });
       } else {
-        // TODO: Integrar com API POST /categories
-        setCategories((prev) => [...prev, categoryData]);
+        const response = await categoriesAPI.create(categoryData);
+        const newCategory = response.data;
+
+        setCategories((prev) => [...prev, newCategory]);
+
         Swal.fire({
           icon: "success",
           title: "Sucesso!",
@@ -142,10 +132,11 @@ export default function CategoriesPage() {
 
       handleCloseModal();
     } catch (error) {
+      console.error("Erro ao salvar categoria:", error);
       Swal.fire({
         icon: "error",
         title: "Erro",
-        text: error.message,
+        text: error.response?.data?.error || error.message,
       });
     }
   };
@@ -173,8 +164,10 @@ export default function CategoriesPage() {
 
     if (result.isConfirmed) {
       try {
-        // TODO: Integrar com API DELETE /categories/:id
+        await categoriesAPI.delete(id);
+
         setCategories((prev) => prev.filter((c) => c.id !== id));
+
         Swal.fire({
           icon: "success",
           title: "Excluído!",
@@ -182,10 +175,11 @@ export default function CategoriesPage() {
           timer: 2000,
         });
       } catch (error) {
+        console.error("Erro ao excluir categoria:", error);
         Swal.fire({
           icon: "error",
           title: "Erro",
-          text: error.message,
+          text: error.response?.data?.error || error.message,
         });
       }
     }
@@ -545,4 +539,3 @@ export default function CategoriesPage() {
     </UserLayout>
   );
 }
-

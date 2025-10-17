@@ -15,8 +15,15 @@ import {
   Clock,
   Users,
 } from "lucide-react";
+import { usePlanner } from "../../contexts/PlannerContext";
+import analyticsAPI from "../../services/api/analytics";
+import transactionsAPI from "../../services/api/transactions";
+import budgetsAPI from "../../services/api/budgets";
+import creditCardsAPI from "../../services/api/creditCards";
+import Swal from "sweetalert2";
 
 export default function UserDashboardPage() {
+  const { selectedPlanner } = usePlanner();
   const [loading, setLoading] = useState(true);
   const [dashboardData, setDashboardData] = useState({
     balance: {
@@ -34,122 +41,111 @@ export default function UserDashboardPage() {
 
   useEffect(() => {
     loadDashboardData();
-  }, []);
+  }, [selectedPlanner]);
+
+  // Auto-refresh a cada 5 minutos
+  useEffect(() => {
+    const interval = setInterval(() => {
+      if (selectedPlanner) {
+        loadDashboardData();
+      }
+    }, 5 * 60 * 1000); // 5 minutos
+
+    return () => clearInterval(interval);
+  }, [selectedPlanner]);
 
   const loadDashboardData = async () => {
+    if (!selectedPlanner) {
+      console.warn("Nenhum planner selecionado");
+      setLoading(false);
+      return;
+    }
+
     setLoading(true);
     try {
-      // TODO: Integrar com APIs do backend
-      // Simulação de dados
-      setTimeout(() => {
-        setDashboardData({
-          balance: {
-            total: 15420.5,
-            income: 8500.0,
-            expenses: 4230.0,
-            savings: 4270.5,
-          },
-          recentTransactions: [
-            {
-              id: 1,
-              type: "expense",
-              description: "Supermercado",
-              amount: 234.5,
-              date: "2025-10-15",
-              category: "Alimentação",
-            },
-            {
-              id: 2,
-              type: "income",
-              description: "Salário",
-              amount: 5000.0,
-              date: "2025-10-14",
-              category: "Salário",
-            },
-            {
-              id: 3,
-              type: "expense",
-              description: "Netflix",
-              amount: 39.9,
-              date: "2025-10-13",
-              category: "Entretenimento",
-            },
-          ],
-          budgets: [
-            {
-              id: 1,
-              name: "Alimentação",
-              spent: 1234.5,
-              limit: 2000.0,
-              percentage: 61.7,
-            },
-            {
-              id: 2,
-              name: "Transporte",
-              spent: 450.0,
-              limit: 600.0,
-              percentage: 75.0,
-            },
-          ],
-          upcomingBills: [
-            {
-              id: 1,
-              name: "Aluguel",
-              amount: 1500.0,
-              dueDate: "2025-10-25",
-              status: "pending",
-            },
-            {
-              id: 2,
-              name: "Energia",
-              amount: 180.0,
-              dueDate: "2025-10-20",
-              status: "upcoming",
-            },
-          ],
-          cards: [
-            {
-              id: 1,
-              name: "Visa Gold",
-              limit: 5000.0,
-              used: 1200.0,
-              percentage: 24.0,
-            },
-          ],
-          memberExpenses: [
-            {
-              member_id: 1,
-              member_name: "Você",
-              member_email: "nicole@gmail.com",
-              total_expenses: 2450.0,
-              transaction_count: 15,
-              percentage: 58.0,
-              color: "#3B82F6",
-            },
-            {
-              member_id: 2,
-              member_name: "Maria Silva",
-              member_email: "maria@example.com",
-              total_expenses: 1200.0,
-              transaction_count: 8,
-              percentage: 28.5,
-              color: "#8B5CF6",
-            },
-            {
-              member_id: 3,
-              member_name: "João Silva",
-              member_email: "joao@example.com",
-              total_expenses: 580.0,
-              transaction_count: 5,
-              percentage: 13.5,
-              color: "#10B981",
-            },
-          ],
-        });
-        setLoading(false);
-      }, 1000);
+      // Usar o novo endpoint consolidado que traz tudo de uma vez
+      const response = await analyticsAPI.getUserDashboard(selectedPlanner.id);
+      const dashboardResponse = response.data || {};
+
+      const {
+        balance = {},
+        recent_transactions = [],
+        budgets = [],
+        credit_cards = [],
+      } = dashboardResponse;
+
+      // Processar orçamentos com percentuais
+      const processedBudgets = budgets.map((budget) => ({
+        ...budget,
+        spent: budget.spent || 0,
+        percentage: budget.limit
+          ? ((budget.spent || 0) / budget.limit) * 100
+          : 0,
+      }));
+
+      // Processar cartões com percentuais de uso
+      const processedCards = credit_cards.map((card) => ({
+        ...card,
+        used: card.used || 0,
+        percentage: card.limit ? ((card.used || 0) / card.limit) * 100 : 0,
+      }));
+
+      // Filtrar transações futuras/recorrentes para "contas a pagar"
+      const upcomingBills = recent_transactions
+        .filter((t) => {
+          const transactionDate = new Date(t.date);
+          const today = new Date();
+          return t.type === "expense" && transactionDate > today;
+        })
+        .slice(0, 3)
+        .map((t) => ({
+          id: t.id,
+          name: t.description,
+          amount: t.amount,
+          dueDate: t.date,
+          status: "pending",
+        }));
+
+      // Buscar despesas por membro (opcional, se disponível)
+      let memberExpenses = [];
+      try {
+        const expensesByCategoryRes = await analyticsAPI.getExpensesByCategory(
+          selectedPlanner.id
+        );
+        const expensesData = expensesByCategoryRes.data || [];
+
+        if (expensesData.length > 0 && expensesData[0].member_name) {
+          memberExpenses = expensesData;
+        }
+      } catch (error) {
+        console.warn("Não foi possível carregar gastos por membro:", error);
+      }
+
+      setDashboardData({
+        balance: {
+          total: balance.total || 0,
+          income: balance.income || 0,
+          expenses: balance.expenses || 0,
+          savings: balance.savings || 0,
+        },
+        recentTransactions: recent_transactions.slice(0, 3),
+        budgets: processedBudgets,
+        upcomingBills: upcomingBills,
+        cards: processedCards,
+        memberExpenses: memberExpenses,
+      });
     } catch (error) {
       console.error("Erro ao carregar dashboard:", error);
+      Swal.fire({
+        icon: "error",
+        title: "Erro ao carregar dashboard",
+        text: error.response?.data?.error || error.message,
+        toast: true,
+        position: "top-end",
+        showConfirmButton: false,
+        timer: 3000,
+      });
+    } finally {
       setLoading(false);
     }
   };

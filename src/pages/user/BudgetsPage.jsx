@@ -16,8 +16,11 @@ import {
   PieChart,
 } from "lucide-react";
 import Swal from "sweetalert2";
+import budgetsAPI from "../../services/api/budgets";
+import { usePlanner } from "../../contexts/PlannerContext";
 
 export default function BudgetsPage() {
+  const { selectedPlanner } = usePlanner();
   const [loading, setLoading] = useState(false);
   const [budgets, setBudgets] = useState([]);
   const [showModal, setShowModal] = useState(false);
@@ -38,61 +41,36 @@ export default function BudgetsPage() {
   }, []);
 
   const loadBudgets = async () => {
+    if (!selectedPlanner) {
+      console.warn("Nenhum planner selecionado");
+      return;
+    }
+
     setLoading(true);
     try {
-      // TODO: Integrar com API
-      setTimeout(() => {
-        const mockData = [
-          {
-            id: 1,
-            name: "Alimentação",
-            category: "Alimentação",
-            limit: 2000.0,
-            spent: 1234.5,
-            period: "month",
-            color: "#10B981",
-            alert_percentage: 80,
-            transactions_count: 45,
-          },
-          {
-            id: 2,
-            name: "Transporte",
-            category: "Transporte",
-            limit: 600.0,
-            spent: 520.0,
-            period: "month",
-            color: "#F59E0B",
-            alert_percentage: 80,
-            transactions_count: 28,
-          },
-          {
-            id: 3,
-            name: "Lazer e Entretenimento",
-            category: "Entretenimento",
-            limit: 500.0,
-            spent: 180.0,
-            period: "month",
-            color: "#8B5CF6",
-            alert_percentage: 80,
-            transactions_count: 12,
-          },
-          {
-            id: 4,
-            name: "Saúde",
-            category: "Saúde",
-            limit: 800.0,
-            spent: 850.0,
-            period: "month",
-            color: "#EF4444",
-            alert_percentage: 80,
-            transactions_count: 8,
-          },
-        ];
-        setBudgets(mockData);
-        setLoading(false);
-      }, 500);
+      const response = await budgetsAPI.getAll(selectedPlanner.id);
+      const budgetsData = response.data || [];
+
+      // Garante que valores são números
+      const enrichedBudgets = budgetsData.map((budget) => ({
+        ...budget,
+        limit: parseFloat(
+          budget.planned_amount || budget.limit || budget.amount || 0
+        ),
+        amount: parseFloat(budget.planned_amount || budget.amount || 0),
+        spent: parseFloat(budget.spent || 0),
+        transactions_count: parseInt(budget.transactions_count || 0),
+      }));
+
+      setBudgets(enrichedBudgets);
     } catch (error) {
       console.error("Erro ao carregar orçamentos:", error);
+      Swal.fire({
+        icon: "error",
+        title: "Erro ao carregar orçamentos",
+        text: error.response?.data?.error || error.message,
+      });
+    } finally {
       setLoading(false);
     }
   };
@@ -173,22 +151,43 @@ export default function BudgetsPage() {
   const handleSubmit = async (e) => {
     e.preventDefault();
 
+    if (!selectedPlanner) {
+      Swal.fire({
+        icon: "error",
+        title: "Erro",
+        text: "Nenhum planner selecionado",
+      });
+      return;
+    }
+
     try {
+      const now = new Date();
+
       const budgetData = {
-        ...formData,
-        limit: parseFloat(formData.limit),
-        alert_percentage: parseInt(formData.alert_percentage),
-        id: editingBudget ? editingBudget.id : Date.now(),
-        spent: editingBudget ? editingBudget.spent : 0,
-        transactions_count: editingBudget
-          ? editingBudget.transactions_count
-          : 0,
+        category_id: parseInt(formData.category),
+        planned_amount: parseFloat(formData.limit),
+        year: now.getFullYear(),
+        month: now.getMonth() + 1,
+        planner_id: selectedPlanner.id,
+        notes: formData.name || null,
       };
 
       if (editingBudget) {
+        const response = await budgetsAPI.update(editingBudget.id, budgetData);
+        const updatedBudget = response.data;
+
         setBudgets((prev) =>
-          prev.map((b) => (b.id === editingBudget.id ? budgetData : b))
+          prev.map((b) =>
+            b.id === editingBudget.id
+              ? {
+                  ...updatedBudget,
+                  spent: b.spent,
+                  transactions_count: b.transactions_count,
+                }
+              : b
+          )
         );
+
         Swal.fire({
           icon: "success",
           title: "Sucesso!",
@@ -196,7 +195,22 @@ export default function BudgetsPage() {
           timer: 2000,
         });
       } else {
-        setBudgets((prev) => [...prev, budgetData]);
+        const response = await budgetsAPI.create(budgetData);
+        const newBudget = response.data;
+
+        setBudgets((prev) => [
+          ...prev,
+          {
+            ...newBudget,
+            limit: parseFloat(newBudget.planned_amount || newBudget.limit || 0),
+            amount: parseFloat(
+              newBudget.planned_amount || newBudget.amount || 0
+            ),
+            spent: parseFloat(newBudget.spent || 0),
+            transactions_count: parseInt(newBudget.transactions_count || 0),
+          },
+        ]);
+
         Swal.fire({
           icon: "success",
           title: "Sucesso!",
@@ -207,10 +221,11 @@ export default function BudgetsPage() {
 
       handleCloseModal();
     } catch (error) {
+      console.error("Erro ao salvar orçamento:", error);
       Swal.fire({
         icon: "error",
         title: "Erro",
-        text: error.message,
+        text: error.response?.data?.error || error.message,
       });
     }
   };
@@ -229,7 +244,10 @@ export default function BudgetsPage() {
 
     if (result.isConfirmed) {
       try {
+        await budgetsAPI.delete(id);
+
         setBudgets((prev) => prev.filter((b) => b.id !== id));
+
         Swal.fire({
           icon: "success",
           title: "Excluído!",
@@ -237,10 +255,11 @@ export default function BudgetsPage() {
           timer: 2000,
         });
       } catch (error) {
+        console.error("Erro ao excluir orçamento:", error);
         Swal.fire({
           icon: "error",
           title: "Erro",
-          text: error.message,
+          text: error.response?.data?.error || error.message,
         });
       }
     }

@@ -16,16 +16,23 @@ import {
   Upload,
 } from "lucide-react";
 import Swal from "sweetalert2";
+import transactionsAPI from "../../services/api/transactions";
+import categoriesAPI from "../../services/api/categories";
+import accountsAPI from "../../services/api/accounts";
+import { usePlanner } from "../../contexts/PlannerContext";
 
 export default function TransactionsPage() {
   const navigate = useNavigate();
+  const { selectedPlanner } = usePlanner();
   const [loading, setLoading] = useState(false);
   const [transactions, setTransactions] = useState([]);
   const [filteredTransactions, setFilteredTransactions] = useState([]);
   const [showFilters, setShowFilters] = useState(false);
   const [showModal, setShowModal] = useState(false);
   const [editingTransaction, setEditingTransaction] = useState(null);
-  
+  const [categories, setCategories] = useState([]);
+  const [accounts, setAccounts] = useState([]);
+
   const [filters, setFilters] = useState({
     type: "all", // all, income, expense
     category: "all",
@@ -45,70 +52,63 @@ export default function TransactionsPage() {
 
   useEffect(() => {
     loadTransactions();
-  }, []);
+    loadCategoriesAndAccounts();
+  }, [selectedPlanner]);
 
   useEffect(() => {
     applyFilters();
   }, [filters, transactions]);
 
   const loadTransactions = async () => {
+    if (!selectedPlanner) {
+      console.warn("Nenhum planner selecionado");
+      return;
+    }
+
     setLoading(true);
     try {
-      // TODO: Integrar com API
-      setTimeout(() => {
-        const mockData = [
-          {
-            id: 1,
-            type: "expense",
-            description: "Supermercado Extra",
-            amount: 234.50,
-            date: "2025-10-15",
-            category: "Alimentação",
-            account: "Nubank",
-          },
-          {
-            id: 2,
-            type: "income",
-            description: "Salário Outubro",
-            amount: 5000.00,
-            date: "2025-10-14",
-            category: "Salário",
-            account: "Banco do Brasil",
-          },
-          {
-            id: 3,
-            type: "expense",
-            description: "Netflix Premium",
-            amount: 39.90,
-            date: "2025-10-13",
-            category: "Entretenimento",
-            account: "Cartão Visa",
-          },
-          {
-            id: 4,
-            type: "expense",
-            description: "Uber",
-            amount: 28.50,
-            date: "2025-10-12",
-            category: "Transporte",
-            account: "Nubank",
-          },
-          {
-            id: 5,
-            type: "income",
-            description: "Freelance - Website",
-            amount: 1500.00,
-            date: "2025-10-10",
-            category: "Freelance",
-            account: "Banco do Brasil",
-          },
-        ];
-        setTransactions(mockData);
-        setLoading(false);
-      }, 500);
+      const response = await transactionsAPI.getAll(selectedPlanner.id);
+      const transactionsData = response.data || [];
+
+      // Enriquecer transações com nomes de categoria e conta
+      const enrichedTransactions = transactionsData.map((t) => {
+        const category = categories.find((c) => c.id === t.category_id);
+        const account = accounts.find((a) => a.id === t.account_id);
+
+        return {
+          ...t,
+          type: t.transaction_type || t.type,
+          category: category?.name || "Sem categoria",
+          account: account?.name || "Sem conta",
+        };
+      });
+
+      setTransactions(enrichedTransactions);
     } catch (error) {
       console.error("Erro ao carregar transações:", error);
+      Swal.fire({
+        icon: "error",
+        title: "Erro ao carregar transações",
+        text: error.response?.data?.error || error.message,
+      });
+    } finally {
       setLoading(false);
+    }
+  };
+
+  const loadCategoriesAndAccounts = async () => {
+    if (!selectedPlanner) return;
+
+    try {
+      const [categoriesRes, accountsRes] = await Promise.all([
+        categoriesAPI.getAll(selectedPlanner.id),
+        accountsAPI.getAll(selectedPlanner.id),
+      ]);
+
+      setCategories(categoriesRes.data || []);
+      setAccounts(accountsRes.data || []);
+    } catch (error) {
+      console.error("Erro ao carregar categorias e contas:", error);
     }
   };
 
@@ -154,12 +154,12 @@ export default function TransactionsPage() {
     if (transaction) {
       setEditingTransaction(transaction);
       setFormData({
-        type: transaction.type,
+        type: transaction.type || transaction.transaction_type,
         description: transaction.description,
         amount: transaction.amount.toString(),
         date: transaction.date,
-        category: transaction.category,
-        account: transaction.account,
+        category: transaction.category_id?.toString() || "",
+        account: transaction.account_id?.toString() || "",
         notes: transaction.notes || "",
       });
     } else {
@@ -184,43 +184,64 @@ export default function TransactionsPage() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    
+
+    if (!selectedPlanner) {
+      Swal.fire({
+        icon: "error",
+        title: "Erro",
+        text: "Nenhum planner selecionado",
+      });
+      return;
+    }
+
     try {
-      // TODO: Integrar com API
       const transactionData = {
-        ...formData,
+        description: formData.description,
         amount: parseFloat(formData.amount),
-        id: editingTransaction ? editingTransaction.id : Date.now(),
+        transaction_type: formData.type,
+        date: formData.date,
+        category_id: parseInt(formData.category),
+        account_id: parseInt(formData.account),
+        planner_id: selectedPlanner.id,
+        notes: formData.notes || null,
       };
 
       if (editingTransaction) {
-        // Atualizar
-        setTransactions((prev) =>
-          prev.map((t) => (t.id === editingTransaction.id ? transactionData : t))
+        const response = await transactionsAPI.update(
+          editingTransaction.id,
+          transactionData
         );
+
         Swal.fire({
           icon: "success",
           title: "Sucesso!",
           text: "Transação atualizada",
           timer: 2000,
         });
+
+        // Recarregar transações
+        loadTransactions();
       } else {
-        // Criar
-        setTransactions((prev) => [transactionData, ...prev]);
+        const response = await transactionsAPI.create(transactionData);
+
         Swal.fire({
           icon: "success",
           title: "Sucesso!",
           text: "Transação criada",
           timer: 2000,
         });
+
+        // Recarregar transações
+        loadTransactions();
       }
 
       handleCloseModal();
     } catch (error) {
+      console.error("Erro ao salvar transação:", error);
       Swal.fire({
         icon: "error",
         title: "Erro",
-        text: error.message,
+        text: error.response?.data?.error || error.message,
       });
     }
   };
@@ -239,8 +260,10 @@ export default function TransactionsPage() {
 
     if (result.isConfirmed) {
       try {
-        // TODO: Integrar com API
+        await transactionsAPI.delete(id);
+
         setTransactions((prev) => prev.filter((t) => t.id !== id));
+
         Swal.fire({
           icon: "success",
           title: "Excluído!",
@@ -248,10 +271,11 @@ export default function TransactionsPage() {
           timer: 2000,
         });
       } catch (error) {
+        console.error("Erro ao excluir transação:", error);
         Swal.fire({
           icon: "error",
           title: "Erro",
-          text: error.message,
+          text: error.response?.data?.error || error.message,
         });
       }
     }
@@ -568,14 +592,68 @@ export default function TransactionsPage() {
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   Categoria
                 </label>
-                <input
-                  type="text"
+                <select
                   value={formData.category}
                   onChange={(e) =>
-                    setFormData((prev) => ({ ...prev, category: e.target.value }))
+                    setFormData((prev) => ({
+                      ...prev,
+                      category: e.target.value,
+                    }))
                   }
                   className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
                   required
+                >
+                  <option value="">Selecione uma categoria</option>
+                  {categories
+                    .filter(
+                      (c) => c.type === formData.type || c.type === "both"
+                    )
+                    .map((category) => (
+                      <option key={category.id} value={category.id}>
+                        {category.name}
+                      </option>
+                    ))}
+                </select>
+              </div>
+
+              {/* Account */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Conta
+                </label>
+                <select
+                  value={formData.account}
+                  onChange={(e) =>
+                    setFormData((prev) => ({
+                      ...prev,
+                      account: e.target.value,
+                    }))
+                  }
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+                  required
+                >
+                  <option value="">Selecione uma conta</option>
+                  {accounts.map((account) => (
+                    <option key={account.id} value={account.id}>
+                      {account.name} - {account.bank}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Notes */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Observações (opcional)
+                </label>
+                <textarea
+                  value={formData.notes}
+                  onChange={(e) =>
+                    setFormData((prev) => ({ ...prev, notes: e.target.value }))
+                  }
+                  rows={3}
+                  placeholder="Notas adicionais sobre esta transação..."
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none resize-none"
                 />
               </div>
 
@@ -602,4 +680,3 @@ export default function TransactionsPage() {
     </UserLayout>
   );
 }
-

@@ -14,8 +14,9 @@ import {
 } from "lucide-react";
 import { usePlanner } from "../../contexts/PlannerContext";
 import { useAuth } from "../../hooks/useAuth";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
 import Swal from "sweetalert2";
+import plannersAPI from "../../services/api/planners";
 
 export default function PlannersPage() {
   const [loading, setLoading] = useState(false);
@@ -23,11 +24,16 @@ export default function PlannersPage() {
   const [showModal, setShowModal] = useState(false);
   const [showMembersModal, setShowMembersModal] = useState(false);
   const [editingPlanner, setEditingPlanner] = useState(null);
-  const [selectedPlannerForMembers, setSelectedPlannerForMembers] = useState(null);
+  const [selectedPlannerForMembers, setSelectedPlannerForMembers] =
+    useState(null);
 
   const { selectedPlanner, selectPlanner, clearPlanner } = usePlanner();
   const { user } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
+
+  // Verifica se veio com flag de needsPlanner (redirecionado por falta de planner)
+  const needsPlanner = location.state?.needsPlanner;
 
   const [formData, setFormData] = useState({
     name: "",
@@ -38,46 +44,63 @@ export default function PlannersPage() {
 
   useEffect(() => {
     loadPlanners();
-  }, []);
+
+    // Se foi redirecionado por falta de planner, abre modal automaticamente
+    if (needsPlanner) {
+      // Garante que o formData está limpo
+      setFormData({ name: "", description: "" });
+      setEditingPlanner(null);
+      setShowModal(true);
+      // Limpa a flag do state
+      navigate("/app/planners", { replace: true, state: {} });
+    }
+  }, [needsPlanner]);
 
   const loadPlanners = async () => {
     setLoading(true);
     try {
-      // TODO: Integrar com API
-      setTimeout(() => {
-        const mockData = [
-          {
-            id: 1,
-            name: "Finanças Pessoais",
-            description: "Minhas finanças pessoais",
-            owner_id: user?.id,
-            is_owner: true,
-            members: [
-              { id: 1, name: `${user?.first_name} ${user?.last_name}`, email: user?.email, role: "owner" },
-            ],
-            members_count: 1,
-            created_at: "2025-01-15",
-          },
-          {
-            id: 2,
-            name: "Família",
-            description: "Orçamento familiar compartilhado",
-            owner_id: user?.id,
-            is_owner: true,
-            members: [
-              { id: 1, name: `${user?.first_name} ${user?.last_name}`, email: user?.email, role: "owner" },
-              { id: 2, name: "Maria Silva", email: "maria@example.com", role: "member" },
-              { id: 3, name: "João Silva", email: "joao@example.com", role: "member" },
-            ],
-            members_count: 3,
-            created_at: "2025-02-20",
-          },
-        ];
-        setPlanners(mockData);
-        setLoading(false);
-      }, 500);
+      const response = await plannersAPI.getAll();
+      const plannersData = response.data || [];
+
+      // Enriquecer dados dos planners
+      const enrichedPlanners = await Promise.all(
+        plannersData.map(async (planner) => {
+          try {
+            // Tentar buscar membros do planner
+            const membersResponse = await plannersAPI.getMembers(planner.id);
+            const members = membersResponse.data || [];
+
+            return {
+              ...planner,
+              is_owner: planner.owner_id === user?.id,
+              members: members,
+              members_count: members.length,
+            };
+          } catch (error) {
+            // Se não conseguir buscar membros, retorna com dados básicos
+            console.warn(
+              `Não foi possível carregar membros do planner ${planner.id}`,
+              error
+            );
+            return {
+              ...planner,
+              is_owner: planner.owner_id === user?.id,
+              members: [],
+              members_count: 0,
+            };
+          }
+        })
+      );
+
+      setPlanners(enrichedPlanners);
     } catch (error) {
       console.error("Erro ao carregar planners:", error);
+      Swal.fire({
+        icon: "error",
+        title: "Erro ao carregar planners",
+        text: error.response?.data?.error || error.message,
+      });
+    } finally {
       setLoading(false);
     }
   };
@@ -102,20 +125,40 @@ export default function PlannersPage() {
   const handleSubmit = async (e) => {
     e.preventDefault();
 
+    // Validação extra
+    if (!formData.name || formData.name.trim() === "") {
+      Swal.fire({
+        icon: "warning",
+        title: "Atenção",
+        text: "Por favor, informe o nome do planner",
+      });
+      return;
+    }
+
     try {
       if (editingPlanner) {
-        // TODO: Integrar com API PUT /planners/:id
-        const updated = {
-          ...editingPlanner,
-          ...formData,
-        };
+        // Atualizar planner existente
+        const response = await plannersAPI.update(editingPlanner.id, formData);
+        const updatedPlanner = response.data;
+
+        // Atualizar na lista local
         setPlanners((prev) =>
-          prev.map((p) => (p.id === editingPlanner.id ? updated : p))
+          prev.map((p) =>
+            p.id === editingPlanner.id
+              ? {
+                  ...p,
+                  ...updatedPlanner,
+                }
+              : p
+          )
         );
 
         // Se for o planner selecionado, atualiza o contexto
         if (selectedPlanner?.id === editingPlanner.id) {
-          selectPlanner(updated);
+          selectPlanner({
+            ...selectedPlanner,
+            ...updatedPlanner,
+          });
         }
 
         Swal.fire({
@@ -125,20 +168,22 @@ export default function PlannersPage() {
           timer: 2000,
         });
       } else {
-        // TODO: Integrar com API POST /planners
-        const newPlanner = {
-          id: Date.now(),
-          ...formData,
-          owner_id: user?.id,
-          is_owner: true,
-          members: [
-            { id: 1, name: `${user?.first_name} ${user?.last_name}`, email: user?.email, role: "owner" },
-          ],
-          members_count: 1,
-          created_at: new Date().toISOString(),
-        };
+        // Criar novo planner
+        console.log("📋 Criando planner com dados:", formData);
+        const response = await plannersAPI.create(formData);
+        console.log("✅ Planner criado:", response.data);
+        const newPlanner = response.data;
 
-        setPlanners((prev) => [...prev, newPlanner]);
+        // Adicionar à lista local com dados enriquecidos
+        setPlanners((prev) => [
+          ...prev,
+          {
+            ...newPlanner,
+            is_owner: true,
+            members: [],
+            members_count: 0,
+          },
+        ]);
 
         Swal.fire({
           icon: "success",
@@ -150,10 +195,12 @@ export default function PlannersPage() {
 
       setShowModal(false);
     } catch (error) {
+      console.error("❌ Erro ao salvar planner:", error);
+      console.error("Detalhes do erro:", error.response?.data);
       Swal.fire({
         icon: "error",
         title: "Erro",
-        text: error.message,
+        text: error.response?.data?.error || error.message,
       });
     }
   };
@@ -172,13 +219,15 @@ export default function PlannersPage() {
 
     if (result.isConfirmed) {
       try {
-        // TODO: Integrar com API DELETE /planners/:id
+        console.log(`🗑️ Excluindo planner ID: ${id}`);
+        const response = await plannersAPI.delete(id);
+        console.log("✅ Planner excluído:", response);
+
         setPlanners((prev) => prev.filter((p) => p.id !== id));
 
         // Se deletou o planner selecionado, limpa a seleção
         if (selectedPlanner?.id === id) {
           clearPlanner();
-          navigate("/app/select-planner");
         }
 
         Swal.fire({
@@ -187,11 +236,16 @@ export default function PlannersPage() {
           text: "Planner excluído com sucesso",
           timer: 2000,
         });
+
+        // Recarrega a lista para garantir sincronização
+        await loadPlanners();
       } catch (error) {
+        console.error("❌ Erro ao excluir planner:", error);
+        console.error("Detalhes:", error.response?.data);
         Swal.fire({
           icon: "error",
-          title: "Erro",
-          text: error.message,
+          title: "Erro ao excluir",
+          text: error.response?.data?.error || error.message,
         });
       }
     }
@@ -216,7 +270,10 @@ export default function PlannersPage() {
     e.preventDefault();
 
     try {
-      // TODO: Integrar com API POST /planners/:id/members
+      await plannersAPI.addMember(selectedPlannerForMembers.id, {
+        email: memberEmail,
+      });
+
       Swal.fire({
         icon: "success",
         title: "Convite Enviado!",
@@ -225,11 +282,15 @@ export default function PlannersPage() {
       });
       setMemberEmail("");
       setShowMembersModal(false);
+
+      // Recarregar planners para atualizar lista de membros
+      loadPlanners();
     } catch (error) {
+      console.error("Erro ao adicionar membro:", error);
       Swal.fire({
         icon: "error",
         title: "Erro",
-        text: error.message,
+        text: error.response?.data?.error || error.message,
       });
     }
   };
@@ -246,12 +307,25 @@ export default function PlannersPage() {
     });
 
     if (result.isConfirmed) {
-      // TODO: Integrar com API DELETE /planners/:id/members/:memberId
-      Swal.fire({
-        icon: "success",
-        title: "Removido!",
-        timer: 2000,
-      });
+      try {
+        await plannersAPI.removeMember(plannerId, memberId);
+
+        Swal.fire({
+          icon: "success",
+          title: "Removido!",
+          timer: 2000,
+        });
+
+        // Recarregar planners para atualizar lista de membros
+        loadPlanners();
+      } catch (error) {
+        console.error("Erro ao remover membro:", error);
+        Swal.fire({
+          icon: "error",
+          title: "Erro",
+          text: error.response?.data?.error || error.message,
+        });
+      }
     }
   };
 
@@ -286,7 +360,9 @@ export default function PlannersPage() {
                 <p className="text-blue-100 text-sm font-medium mb-1">
                   Planner Ativo
                 </p>
-                <h2 className="text-2xl font-bold mb-2">{selectedPlanner.name}</h2>
+                <h2 className="text-2xl font-bold mb-2">
+                  {selectedPlanner.name}
+                </h2>
                 {selectedPlanner.description && (
                   <p className="text-blue-100">{selectedPlanner.description}</p>
                 )}
@@ -382,7 +458,10 @@ export default function PlannersPage() {
                 <div className="flex items-center gap-4 mb-4 text-sm text-gray-600">
                   <div className="flex items-center gap-1">
                     <Users size={16} />
-                    <span>{planner.members_count} membro{planner.members_count > 1 ? "s" : ""}</span>
+                    <span>
+                      {planner.members_count} membro
+                      {planner.members_count > 1 ? "s" : ""}
+                    </span>
                   </div>
                   {planner.is_owner && (
                     <span className="flex items-center gap-1 text-orange-600">
@@ -445,6 +524,9 @@ export default function PlannersPage() {
                   placeholder="Ex: Finanças Pessoais"
                   className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
                   required
+                  minLength={1}
+                  maxLength={100}
+                  autoFocus
                 />
               </div>
 
@@ -542,7 +624,10 @@ export default function PlannersPage() {
                 >
                   <div className="flex items-center gap-3">
                     <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center text-white font-bold text-sm">
-                      {member.name.split(" ").map(n => n[0]).join("")}
+                      {member.name
+                        .split(" ")
+                        .map((n) => n[0])
+                        .join("")}
                     </div>
                     <div>
                       <p className="font-medium text-gray-800">{member.name}</p>
@@ -581,4 +666,3 @@ export default function PlannersPage() {
     </UserLayout>
   );
 }
-

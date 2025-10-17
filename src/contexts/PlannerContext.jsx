@@ -1,4 +1,11 @@
-import { createContext, useContext, useState, useCallback, useEffect } from "react";
+import {
+  createContext,
+  useContext,
+  useState,
+  useCallback,
+  useEffect,
+} from "react";
+import plannersAPI from "../services/api/planners";
 
 const PlannerContext = createContext(null);
 
@@ -16,21 +23,45 @@ export function PlannerProvider({ children }) {
   const [selectedPlanner, setSelectedPlanner] = useState(null);
   const [loading, setLoading] = useState(true);
 
-  // Carrega planner selecionado do localStorage ao montar
+  // Carrega e valida planner selecionado do localStorage ao montar
   useEffect(() => {
+    validateStoredPlanner();
+  }, []);
+
+  const validateStoredPlanner = async () => {
     const storedPlanner = localStorage.getItem(PLANNER_STORAGE_KEY);
+
     if (storedPlanner) {
       try {
         const planner = JSON.parse(storedPlanner);
-        setSelectedPlanner(planner);
-        console.log("📋 Planner carregado do storage:", planner.name);
+        console.log("📋 Planner encontrado no storage:", planner.name);
+
+        // Valida se o planner ainda existe no backend
+        try {
+          const response = await plannersAPI.getById(planner.id);
+          if (response.data) {
+            setSelectedPlanner(response.data);
+            console.log("✅ Planner validado no backend:", response.data.name);
+          } else {
+            throw new Error("Planner não encontrado");
+          }
+        } catch (error) {
+          console.warn(
+            "⚠️ Planner do storage não existe mais no backend, removendo:",
+            error
+          );
+          localStorage.removeItem(PLANNER_STORAGE_KEY);
+          setSelectedPlanner(null);
+        }
       } catch (error) {
-        console.error("Erro ao carregar planner do storage:", error);
+        console.error("❌ Erro ao validar planner do storage:", error);
         localStorage.removeItem(PLANNER_STORAGE_KEY);
+        setSelectedPlanner(null);
       }
     }
+
     setLoading(false);
-  }, []);
+  };
 
   const selectPlanner = useCallback((planner) => {
     console.log("📋 Selecionando planner:", planner.name);
@@ -59,9 +90,6 @@ export function PlannerProvider({ children }) {
   };
 
   return (
-    <PlannerContext.Provider value={value}>
-      {children}
-    </PlannerContext.Provider>
+    <PlannerContext.Provider value={value}>{children}</PlannerContext.Provider>
   );
 }
-
