@@ -47,7 +47,8 @@ export default function Login() {
           showConfirmButton: false,
         });
 
-        navigate(ROUTES.USER_DASHBOARD);
+        // Redireciona para seleção de planner primeiro
+        navigate("/app/select-planner");
       }
     } catch (err) {
       console.error("Erro no login:", err);

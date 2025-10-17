@@ -151,10 +151,24 @@ export function AuthProvider({ children }) {
   }, []);
 
   // Atualiza informações do usuário
-  const updateUserInfo = useCallback((userInfo) => {
+  const updateUserInfo = useCallback((token, refreshToken, userInfo) => {
     console.log("👤 Atualizando informações do usuário...");
-    localStorage.setItem(AUTH_CONFIG.USER_INFO_KEY, JSON.stringify(userInfo));
-    setUser(userInfo);
+
+    // Atualiza tokens se fornecidos
+    if (token) {
+      localStorage.setItem(AUTH_CONFIG.TOKEN_KEY, token);
+    }
+    if (refreshToken) {
+      localStorage.setItem(AUTH_CONFIG.REFRESH_TOKEN_KEY, refreshToken);
+    }
+
+    // Atualiza informações do usuário
+    if (userInfo) {
+      localStorage.setItem(AUTH_CONFIG.USER_INFO_KEY, JSON.stringify(userInfo));
+      setUser(userInfo);
+    }
+
+    console.log("✅ Informações atualizadas com sucesso");
   }, []);
 
   // Verifica auth quando o componente monta
